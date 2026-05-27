@@ -133,6 +133,7 @@ const state = {
   activeSession: null,
   lastSettings: null,
   timerId: null,
+  audioContext: null,
   routeRestoring: false,
 };
 
@@ -555,8 +556,71 @@ function createSession(settings) {
   };
 }
 
+function getAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  if (!state.audioContext) state.audioContext = new AudioContextClass();
+  return state.audioContext;
+}
+
+function primeAlarmSound() {
+  const audioContext = getAudioContext();
+  if (audioContext?.state === "suspended") audioContext.resume().catch(() => {});
+}
+
+function playTone({ frequency, startAt, duration, volume = 0.18, type = "sine" }) {
+  const audioContext = getAudioContext();
+  if (!audioContext) return;
+
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, startAt);
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start(startAt);
+  oscillator.stop(startAt + duration + 0.03);
+}
+
+function playCountdownTick() {
+  const audioContext = getAudioContext();
+  if (!audioContext) return;
+  audioContext.resume?.().catch(() => {});
+  playTone({
+    frequency: 740,
+    startAt: audioContext.currentTime + 0.02,
+    duration: 0.085,
+    volume: 0.13,
+    type: "triangle",
+  });
+}
+
+function playTimerEndSound() {
+  const audioContext = getAudioContext();
+  if (!audioContext) return;
+  audioContext.resume?.().catch(() => {});
+
+  const startAt = audioContext.currentTime + 0.03;
+  [
+    { frequency: 523.25, offset: 0, duration: 0.16, volume: 0.16 },
+    { frequency: 659.25, offset: 0.14, duration: 0.18, volume: 0.17 },
+    { frequency: 783.99, offset: 0.3, duration: 0.22, volume: 0.18 },
+    { frequency: 1046.5, offset: 0.52, duration: 0.34, volume: 0.14 },
+  ].forEach((tone) => {
+    playTone({
+      ...tone,
+      startAt: startAt + tone.offset,
+      type: "sine",
+    });
+  });
+}
+
 function startGame(settings) {
   stopClock();
+  primeAlarmSound();
   state.lastSettings = settings;
   state.activeSession = createSession(settings);
 
@@ -572,6 +636,14 @@ function startGame(settings) {
 }
 
 function startClock() {
+  if (
+    state.activeSession?.mode === "timer" &&
+    state.activeSession.totalSeconds > 0 &&
+    state.activeSession.totalSeconds <= 5
+  ) {
+    playCountdownTick();
+  }
+
   state.timerId = window.setInterval(() => {
     const session = state.activeSession;
     if (!session) return;
@@ -582,9 +654,11 @@ function startClock() {
       if (session.totalSeconds <= 0) {
         session.totalSeconds = 0;
         renderPlayClock();
+        playTimerEndSound();
         finishGame("타이머 종료");
         return;
       }
+      if (session.totalSeconds <= 5) playCountdownTick();
     }
     renderPlayClock();
   }, 1000);
