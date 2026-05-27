@@ -14,6 +14,14 @@ const DIFFICULTIES = {
 const DEFAULT_MIX = { easy: 3, normal: 3, hard: 4 };
 const TIMER_PRESETS = [15, 30, 60, 120, 180, 300];
 const dictionaries = window.KEYWORD_GAME_DICTIONARIES || {};
+const WORD_DIFFICULTIES = ["easy", "normal", "hard"];
+const WORD_DIFFICULTY_LABELS = {
+  easy: "초급",
+  normal: "중급",
+  hard: "상급",
+  all: "전체",
+  mixed: "혼합",
+};
 
 const ICONS = {
   activity: '<path d="M22 12h-4l-3 8-6-16-3 8H2"/>',
@@ -261,6 +269,30 @@ function takeShuffledWords(sourceWords, count, allowRepeats = true) {
   const selected = [];
   while (selected.length < count) selected.push(...shuffle(words));
   return selected.slice(0, count);
+}
+
+function makeWordEntry(word, difficulty) {
+  return { word, difficulty };
+}
+
+function getWordValue(entry) {
+  return typeof entry === "string" ? entry : entry?.word ?? "";
+}
+
+function getWordDifficulty(entry, fallback = "all") {
+  return typeof entry === "string" ? fallback : entry?.difficulty || fallback;
+}
+
+function getWordEntries(game, difficulty = "all") {
+  if (game.words?.all) return (game.words.all ?? []).map((word) => makeWordEntry(word, "all"));
+  if (difficulty === "all" || difficulty === "mixed") {
+    return WORD_DIFFICULTIES.flatMap((level) => (game.words?.[level] ?? []).map((word) => makeWordEntry(word, level)));
+  }
+  return (game.words?.[difficulty] ?? []).map((word) => makeWordEntry(word, difficulty));
+}
+
+function getDifficultyLabel(difficulty) {
+  return WORD_DIFFICULTY_LABELS[difficulty] || WORD_DIFFICULTY_LABELS.all;
 }
 
 function formatClock(totalSeconds) {
@@ -520,19 +552,19 @@ function toggleFavorite(gameId) {
 
 function buildWordList(game, settings) {
   if (settings.useAllWords) {
-    const words = getAllWords(game, settings.difficulty);
+    const words = getWordEntries(game, settings.difficulty);
     return takeShuffledWords(words, words.length, false);
   }
 
   if (settings.difficulty === "mixed" && settings.mixCounts && !game.words?.all) {
     return shuffle([
-      ...takeShuffledWords(game.words?.easy ?? [], settings.mixCounts.easy),
-      ...takeShuffledWords(game.words?.normal ?? [], settings.mixCounts.normal),
-      ...takeShuffledWords(game.words?.hard ?? [], settings.mixCounts.hard),
+      ...takeShuffledWords((game.words?.easy ?? []).map((word) => makeWordEntry(word, "easy")), settings.mixCounts.easy),
+      ...takeShuffledWords((game.words?.normal ?? []).map((word) => makeWordEntry(word, "normal")), settings.mixCounts.normal),
+      ...takeShuffledWords((game.words?.hard ?? []).map((word) => makeWordEntry(word, "hard")), settings.mixCounts.hard),
     ]);
   }
 
-  return takeShuffledWords(getAllWords(game, settings.difficulty), settings.wordCount);
+  return takeShuffledWords(getWordEntries(game, settings.difficulty), settings.wordCount);
 }
 
 function createSession(settings) {
@@ -604,16 +636,23 @@ function playTimerEndSound() {
   audioContext.resume?.().catch(() => {});
 
   const startAt = audioContext.currentTime + 0.03;
-  [
-    { frequency: 523.25, offset: 0, duration: 0.16, volume: 0.16 },
-    { frequency: 659.25, offset: 0.14, duration: 0.18, volume: 0.17 },
-    { frequency: 783.99, offset: 0.3, duration: 0.22, volume: 0.18 },
-    { frequency: 1046.5, offset: 0.52, duration: 0.34, volume: 0.14 },
-  ].forEach((tone) => {
+  const ringNotes = [880, 1174.66, 1396.91, 1174.66];
+  Array.from({ length: 26 }, (_, index) => ({
+    frequency: ringNotes[index % ringNotes.length],
+    offset: index * 0.105,
+    duration: 0.09,
+    volume: index < 21 ? 0.24 : 0.18,
+    type: index % 2 ? "sine" : "triangle",
+  }))
+    .concat([
+      { frequency: 1760, offset: 2.72, duration: 0.16, volume: 0.2, type: "triangle" },
+      { frequency: 1567.98, offset: 2.88, duration: 0.18, volume: 0.18, type: "sine" },
+      { frequency: 1318.51, offset: 3.06, duration: 0.34, volume: 0.14, type: "sine" },
+    ])
+    .forEach((tone) => {
     playTone({
       ...tone,
       startAt: startAt + tone.offset,
-      type: "sine",
     });
   });
 }
@@ -700,7 +739,8 @@ function renderPlay() {
   const session = state.activeSession;
   if (!session) return;
 
-  const currentWord = session.words[session.currentIndex];
+  const currentWordEntry = session.words[session.currentIndex];
+  const currentWord = getWordValue(currentWordEntry);
   const correct = session.answers.filter((answer) => answer.result === "correct").length;
   const wrong = session.answers.filter((answer) => answer.result === "wrong").length;
   const passed = session.answers.filter((answer) => answer.result === "pass").length;
@@ -743,13 +783,14 @@ function markAnswer(result) {
   const session = state.activeSession;
   if (!session) return;
 
-  const word = session.words[session.currentIndex];
+  const wordEntry = session.words[session.currentIndex];
+  const word = getWordValue(wordEntry);
   if (!word) {
     finishGame();
     return;
   }
 
-  setAnswer(session, { word, result, order: session.currentIndex + 1 });
+  setAnswer(session, { word, difficulty: getWordDifficulty(wordEntry, session.difficulty), result, order: session.currentIndex + 1 });
   moveNext(false);
 }
 
@@ -757,9 +798,10 @@ function moveNext(markPassIfEmpty = true) {
   const session = state.activeSession;
   if (!session) return;
 
-  const word = session.words[session.currentIndex];
+  const wordEntry = session.words[session.currentIndex];
+  const word = getWordValue(wordEntry);
   if (markPassIfEmpty && word && !getAnswerForCurrentWord(session)) {
-    setAnswer(session, { word, result: "pass", order: session.currentIndex + 1 });
+    setAnswer(session, { word, difficulty: getWordDifficulty(wordEntry, session.difficulty), result: "pass", order: session.currentIndex + 1 });
   }
 
   session.currentIndex += 1;
@@ -789,12 +831,16 @@ function finishGame(reason = "") {
 
   stopClock();
   const finishedAt = new Date();
-  const answerByOrder = new Map(session.answers.map((answer) => [answer.order, answer.result]));
-  const playedWords = session.words.map((word, index) => ({
-    word,
-    result: answerByOrder.get(index + 1) || "unplayed",
-    order: index + 1,
-  }));
+  const answerByOrder = new Map(session.answers.map((answer) => [answer.order, answer]));
+  const playedWords = session.words.map((wordEntry, index) => {
+    const answer = answerByOrder.get(index + 1);
+    return {
+      word: answer?.word || getWordValue(wordEntry),
+      difficulty: answer?.difficulty || getWordDifficulty(wordEntry, session.difficulty),
+      result: answer?.result || "unplayed",
+      order: index + 1,
+    };
+  });
   const correct = session.answers.filter((answer) => answer.result === "correct").length;
   const wrong = session.answers.filter((answer) => answer.result === "wrong").length;
   const passed = session.answers.filter((answer) => answer.result === "pass").length;
@@ -832,6 +878,22 @@ function getResultLabel(result) {
   return "미진행";
 }
 
+function renderResultWordItems(words, fallbackDifficulty = "all") {
+  return words
+    .map((item, index) => {
+      const difficulty = getWordDifficulty(item, fallbackDifficulty);
+      return `
+        <div class="result-word-item">
+          <span>${item.order || index + 1}</span>
+          <strong>${escapeHtml(getWordValue(item))}</strong>
+          <small class="difficulty-badge difficulty-${difficulty}">${getDifficultyLabel(difficulty)}</small>
+          <em class="result-badge ${item.result || "unplayed"}">${getResultLabel(item.result)}</em>
+        </div>
+      `;
+    })
+    .join("");
+}
+
 function renderResult(result) {
   const rate = result.total > 0 ? Math.round((result.correct / result.total) * 100) : 0;
   elements.resultIcon.innerHTML = iconSvg(result.gameIconName || getGame(result.gameId)?.iconName || "gamepad", "game-icon-svg");
@@ -848,17 +910,7 @@ function renderResult(result) {
     <span><strong>${result.total}</strong><small>전체</small></span>
     <span><strong>${result.unplayed ?? 0}</strong><small>미진행</small></span>
   `;
-  elements.resultWords.innerHTML = result.words
-    .map(
-      (item) => `
-        <div class="result-word-item">
-          <span>${item.order}</span>
-          <strong>${escapeHtml(item.word)}</strong>
-          <em class="result-badge ${item.result}">${getResultLabel(item.result)}</em>
-        </div>
-      `,
-    )
-    .join("");
+  elements.resultWords.innerHTML = renderResultWordItems(result.words, result.difficulty);
 }
 
 function renderHistoryResultModal(result) {
@@ -881,17 +933,7 @@ function renderHistoryResultModal(result) {
     <span><strong>${result.total}</strong><small>전체</small></span>
     <span><strong>${result.unplayed ?? 0}</strong><small>미진행</small></span>
   `;
-  elements.historyResultWords.innerHTML = result.words
-    .map(
-      (item) => `
-        <div class="result-word-item">
-          <span>${item.order}</span>
-          <strong>${escapeHtml(item.word)}</strong>
-          <em class="result-badge ${item.result}">${getResultLabel(item.result)}</em>
-        </div>
-      `,
-    )
-    .join("");
+  elements.historyResultWords.innerHTML = renderResultWordItems(result.words, result.difficulty);
   hydrateIcons(elements.historyResultModal);
 }
 
