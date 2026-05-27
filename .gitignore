@@ -1,0 +1,19 @@
+.DS_Store
+Thumbs.db
+
+# Runtime/test artifacts
+.chrome-*/
+.edge-*/
+.visual-check/
+.landscape-check/
+*.log
+
+# Dependencies/build output
+node_modules/
+dist/
+build/
+.vite/
+
+# Local browser profiles
+.chrome-http-profile*/
+.chrome-test-profile*/
