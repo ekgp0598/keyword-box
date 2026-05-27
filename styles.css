@@ -924,7 +924,7 @@ kbd {
 
 .keyword {
   max-width: 92%;
-  overflow-wrap: normal;
+  overflow-wrap: anywhere;
   color: var(--ink-dark);
   font-family: var(--font-game);
   font-size: var(--keyword-size, clamp(5.4rem, 10vw, 9.2rem));
@@ -932,7 +932,8 @@ kbd {
   line-height: 1.02;
   text-wrap: balance;
   user-select: none;
-  white-space: nowrap;
+  word-break: keep-all;
+  white-space: normal;
 }
 
 .play-rule {
@@ -1491,7 +1492,6 @@ h3,
 
   .game-grid,
   .game-grid.compact,
-  .result-summary,
   .actions.split {
     grid-template-columns: 1fr;
   }
@@ -1508,15 +1508,36 @@ h3,
   }
 
   .counter-card {
-    grid-template-columns: 1fr;
-    justify-items: center;
+    grid-template-columns: minmax(74px, 1fr) auto;
+    justify-items: stretch;
     border-bottom: 1px solid var(--warm-border);
     padding-bottom: 12px;
   }
 
-  .counter-label,
+  .counter-label {
+    justify-self: start;
+  }
+
+  .counter-card .stepper {
+    justify-self: end;
+  }
+
   .available-count {
+    grid-column: 2;
     justify-self: center;
+  }
+
+  .result-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .score-box {
+    padding: 12px 8px;
+  }
+
+  .score-box strong {
+    font-size: clamp(2.3rem, 10vw, 4rem);
   }
 
   .counter-card:last-child {
@@ -1525,12 +1546,14 @@ h3,
   }
 
   .score-actions {
-    grid-template-columns: 0.8fr 1fr 1.2fr 0.8fr;
+    grid-template-columns: 0.86fr 1fr 1.18fr 0.86fr;
     gap: 8px;
+    width: min(100%, calc(100vw - 36px));
   }
 
   .score-button {
     min-height: 62px;
+    padding-inline: 8px;
     font-size: 1rem;
   }
 
@@ -1541,6 +1564,63 @@ h3,
   .history-score {
     max-width: none;
     justify-content: space-between;
+  }
+}
+
+@media (max-width: 560px) {
+  #play-view {
+    width: min(100% - 16px, 1180px);
+  }
+
+  .word-stage {
+    width: min(100%, calc(100vw - 40px));
+    min-height: 46vh;
+    height: clamp(360px, 54vh, 560px);
+    padding: 18px;
+  }
+
+  .keyword {
+    max-width: 100%;
+    font-size: var(--keyword-size, clamp(2.9rem, 13vw, 4.8rem));
+    line-height: 1.14;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+  }
+
+  .score-actions {
+    width: min(100%, calc(100vw - 40px));
+    grid-template-columns: 0.78fr 1fr 1.2fr 0.78fr;
+    gap: 8px;
+  }
+
+  .score-button {
+    gap: 4px;
+    min-height: 58px;
+    padding-inline: 6px;
+    font-size: 0.94rem;
+    line-height: 1.02;
+    word-break: break-all;
+  }
+
+  .score-button .icon {
+    width: 1.08em;
+    height: 1.08em;
+  }
+
+  .result-summary {
+    gap: 7px;
+  }
+
+  .score-box {
+    padding: 10px 5px;
+  }
+
+  .score-box strong {
+    font-size: clamp(2.15rem, 12vw, 3.4rem);
+  }
+
+  .score-box span {
+    font-size: 0.9rem;
   }
 }
 

@@ -686,19 +686,14 @@ function getAnswerForCurrentWord(session) {
 function setKeywordFont(word) {
   const length = [...String(word || "")].length;
   let size = "clamp(5.4rem, 9vw, 9.2rem)";
-  let whiteSpace = "nowrap";
 
   if (length >= 5) size = "clamp(4.8rem, 7.8vw, 7.8rem)";
   if (length >= 8) size = "clamp(3.5rem, 5.9vw, 6rem)";
   if (length >= 11) size = "clamp(2.9rem, 4.8vw, 4.7rem)";
   if (length >= 15) size = "clamp(2.35rem, 3.8vw, 3.7rem)";
-  if (length >= 20) {
-    size = "clamp(2rem, 3.2vw, 3rem)";
-    whiteSpace = "normal";
-  }
+  if (length >= 20) size = "clamp(2rem, 3.2vw, 3rem)";
 
   elements.keyword.style.setProperty("--keyword-size", size);
-  elements.keyword.style.whiteSpace = whiteSpace;
 }
 
 function renderPlay() {
