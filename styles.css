@@ -1095,7 +1095,7 @@ kbd {
 
 .result-word-item {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto auto;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   border-radius: 6px;
@@ -1110,6 +1110,15 @@ kbd {
   color: var(--ink-light);
   font-size: 0.85rem;
   text-align: right;
+}
+
+.result-word-item .result-word-main {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  color: var(--ink-dark);
+  text-align: left;
 }
 
 .result-word-item strong {

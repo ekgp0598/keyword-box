@@ -885,8 +885,10 @@ function renderResultWordItems(words, fallbackDifficulty = "all") {
       return `
         <div class="result-word-item">
           <span>${item.order || index + 1}</span>
-          <strong>${escapeHtml(getWordValue(item))}</strong>
-          <small class="difficulty-badge difficulty-${difficulty}">${getDifficultyLabel(difficulty)}</small>
+          <span class="result-word-main">
+            <strong>${escapeHtml(getWordValue(item))}</strong>
+            <small class="difficulty-badge difficulty-${difficulty}">${getDifficultyLabel(difficulty)}</small>
+          </span>
           <em class="result-badge ${item.result || "unplayed"}">${getResultLabel(item.result)}</em>
         </div>
       `;
