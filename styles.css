@@ -368,19 +368,31 @@ main {
 
 .favorite-button {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
   place-items: center;
-  border: 2px solid var(--ink-dark);
-  border-radius: 999px;
-  background: #fff;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink-light);
+  font-size: 1rem;
+}
+
+.favorite-button:hover {
+  transform: none;
+  box-shadow: none;
   color: var(--ink-dark);
-  font-size: 1.3rem;
 }
 
 .favorite-button.is-on {
-  background: var(--party-yellow);
+  color: #f3b900;
+}
+
+.favorite-button .icon {
+  width: 20px;
+  height: 20px;
 }
 
 .tag-row,
