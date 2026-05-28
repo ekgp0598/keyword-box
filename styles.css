@@ -366,6 +366,12 @@ main {
   line-height: 1.2;
 }
 
+.game-card p {
+  word-break: keep-all;
+  overflow-wrap: normal;
+  text-wrap: pretty;
+}
+
 .favorite-button {
   display: grid;
   width: 24px;
