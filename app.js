@@ -506,6 +506,15 @@ function updateMixAvailability(game) {
   elements.mixHard.max = counts.hard;
 }
 
+function setWordCountMode(useSinglePool) {
+  elements.mixPanel.hidden = useSinglePool;
+  elements.singleCountPanel.hidden = !useSinglePool;
+  [elements.mixEasy, elements.mixNormal, elements.mixHard].forEach((input) => {
+    input.disabled = useSinglePool;
+  });
+  elements.wordCount.disabled = !useSinglePool;
+}
+
 function renderSetup(gameId, options = {}) {
   const game = getGame(gameId);
   if (!game) return;
@@ -526,12 +535,10 @@ function renderSetup(gameId, options = {}) {
   updateMixAvailability(game);
 
   if (game.words?.all) {
-    elements.mixPanel.hidden = true;
-    elements.singleCountPanel.hidden = false;
+    setWordCountMode(true);
     elements.wordCount.value = String(Math.min(10, counts.all || 10));
   } else {
-    elements.mixPanel.hidden = false;
-    elements.singleCountPanel.hidden = true;
+    setWordCountMode(false);
     resetMixCounts();
   }
 
