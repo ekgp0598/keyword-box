@@ -50,6 +50,7 @@ const ICONS = {
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   history: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/>',
   trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/>',
+  heart: '<path d="M19 5.5a5 5 0 0 0-7 0L12 6l-.5-.5a5 5 0 0 0-7 7L12 20l7.5-7.5a5 5 0 0 0 0-7Z"/>',
 };
 
 const RI_ICON_MAP = {
@@ -132,6 +133,18 @@ const games = [
     tags: ["그림", "추측", "웃음"],
     rule: "제시어를 보고 그림으로 표현하고, 다음 사람은 그림만 보고 추측합니다.",
     words: dictionaries.telestrations,
+  },
+  {
+    id: "emotion-words",
+    name: "86가지 감정단어",
+    iconName: "heart",
+    color: "purple",
+    description: "감정을 나타내는 단어를 몸으로 설명해서 맞히는 게임입니다. 정해진 개수를 빨리 맞히면 승리!",
+    tags: ["감정", "몸짓", "대면"],
+    rule: "감정 단어를 말 없이 몸짓과 표정으로만 표현하세요. 정해진 개수를 먼저 다 맞히는 쪽이 승리합니다.",
+    words: dictionaries.emotionWords,
+    fixedDifficulty: "all",
+    hideDifficulty: true,
   },
 ];
 
@@ -536,9 +549,12 @@ function renderSetup(gameId, options = {}) {
 
   if (game.words?.all) {
     setWordCountMode(true);
-    elements.wordCount.value = String(Math.min(10, counts.all || 10));
+    const available = Math.max(1, counts.all || 0);
+    elements.wordCount.max = String(available);
+    elements.wordCount.value = String(Math.min(10, available));
   } else {
     setWordCountMode(false);
+    elements.wordCount.removeAttribute("max");
     resetMixCounts();
   }
 
@@ -598,13 +614,33 @@ function createSession(settings) {
 function getAudioContext() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) return null;
-  if (!state.audioContext) state.audioContext = new AudioContextClass();
+  if (!state.audioContext) {
+    state.audioContext = new AudioContextClass();
+    // iOS 16.4+: 무음(mute) 스위치가 켜져 있어도 소리가 나도록 재생 세션으로 지정
+    try {
+      if (navigator.audioSession) navigator.audioSession.type = "playback";
+    } catch (_) {}
+  }
   return state.audioContext;
 }
 
-function primeAlarmSound() {
+// 모바일(iOS/Safari)은 사용자 제스처 안에서 컨텍스트를 resume하고
+// 무음 버퍼를 한 번 재생해야 이후 소리가 안정적으로 납니다.
+function unlockAudio() {
   const audioContext = getAudioContext();
-  if (audioContext?.state === "suspended") audioContext.resume().catch(() => {});
+  if (!audioContext) return;
+  if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+  try {
+    const buffer = audioContext.createBuffer(1, 1, 22050);
+    const source = audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContext.destination);
+    source.start(0);
+  } catch (_) {}
+}
+
+function primeAlarmSound() {
+  unlockAudio();
 }
 
 function playTone({ frequency, startAt, duration, volume = 0.18, type = "sine" }) {
@@ -1109,7 +1145,9 @@ function handleSetupSubmit(event) {
   const useSinglePool = Boolean(game.words?.all);
   const difficulty = game.fixedDifficulty || (useSinglePool ? "all" : "mixed");
   const mixCounts = getMixCounts();
-  const wordCount = Math.max(1, Number(elements.wordCount.value) || 1);
+  const counts = getAvailableCounts(game);
+  const wordCountMax = useSinglePool ? Math.max(1, counts.all || 1) : Number.POSITIVE_INFINITY;
+  const wordCount = Math.min(wordCountMax, Math.max(1, Number(elements.wordCount.value) || 1));
   const timerSeconds = Math.max(5, Number(elements.timerSeconds.value) || 60);
 
   startGame({
@@ -1188,7 +1226,10 @@ document.addEventListener("click", (event) => {
   if (action === "open-history-result") openHistoryResult(historyId);
   if (action === "close-history-result") closeHistoryResult();
   if (action === "reset-mix") resetMixCounts();
-  if (action === "adjust-word-count") adjustNumberInput(elements.wordCount, Number(target.dataset.delta), 1);
+  if (action === "adjust-word-count") {
+    const maxWords = Number(elements.wordCount.max) || Number.POSITIVE_INFINITY;
+    adjustNumberInput(elements.wordCount, Number(target.dataset.delta), 1, maxWords);
+  }
   if (action === "use-all-words") setAllWordsCount();
   if (action === "adjust-timer") {
     adjustNumberInput(elements.timerSeconds, Number(target.dataset.delta), 5, 600);
@@ -1217,6 +1258,10 @@ document.addEventListener("input", (event) => {
 document.addEventListener("change", (event) => {
   const target = event.target;
   if (target === elements.timeMode) setTimeMode(target.value);
+  if (target === elements.wordCount) {
+    const maxWords = Number(elements.wordCount.max) || Number.POSITIVE_INFINITY;
+    elements.wordCount.value = String(Math.min(maxWords, Math.max(1, Number(elements.wordCount.value) || 1)));
+  }
 });
 
 document.addEventListener("keydown", (event) => {
@@ -1256,6 +1301,25 @@ document.addEventListener("keydown", (event) => {
 });
 
 elements.setupForm.addEventListener("submit", handleSetupSubmit);
+
+// 페이지에서 처음 발생하는 사용자 제스처에 오디오를 미리 잠금 해제한다.
+(function primeAudioOnFirstGesture() {
+  const events = ["pointerdown", "touchend", "click", "keydown"];
+  const handler = () => {
+    unlockAudio();
+    if (state.audioContext && state.audioContext.state === "running") {
+      events.forEach((type) => document.removeEventListener(type, handler));
+    }
+  };
+  events.forEach((type) => document.addEventListener(type, handler, { passive: true }));
+})();
+
+// 모바일은 탭을 백그라운드로 보내면 컨텍스트가 suspended 되므로 복귀 시 재개한다.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && state.audioContext?.state === "suspended") {
+    state.audioContext.resume().catch(() => {});
+  }
+});
 
 renderGameList();
 updateTimerLabel();

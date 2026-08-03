@@ -14,6 +14,7 @@ const dictionaries = context.window.KEYWORD_GAME_DICTIONARIES;
 const expectedCounts = {
   charades: { easy: 100, normal: 100, hard: 100 },
   charadesFunny: { all: 139 },
+  emotionWords: { all: 86 },
   silentShout: { easy: 100, normal: 100, hard: 100 },
   telestrations: { easy: 100, normal: 100, hard: 100 },
 };
