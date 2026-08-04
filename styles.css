@@ -90,6 +90,11 @@ h3,
   padding: 0 max(16px, calc((100vw - 1180px) / 2));
 }
 
+/* 게임 진행 중에는 상단 헤더를 숨겨 화면에 집중하도록 한다. */
+body[data-view="play"] .topbar {
+  display: none;
+}
+
 .brand {
   display: inline-flex;
   align-items: center;
@@ -827,6 +832,16 @@ kbd {
 .play-tools {
   display: flex;
   gap: 8px;
+}
+
+.sound-toggle #sound-toggle-icon {
+  display: inline-flex;
+}
+
+.play-tools .sound-toggle.is-muted {
+  background: var(--warm-bg);
+  color: var(--ink-light);
+  opacity: 0.75;
 }
 
 .timer-display {

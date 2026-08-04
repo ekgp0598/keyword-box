@@ -1,6 +1,7 @@
 const STORAGE_KEYS = {
   favorites: "keywordGame.favorites",
   history: "keywordGame.history",
+  soundEnabled: "keywordGame.soundEnabled",
 };
 
 const DIFFICULTIES = {
@@ -51,6 +52,8 @@ const ICONS = {
   history: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/>',
   trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/>',
   heart: '<path d="M19 5.5a5 5 0 0 0-7 0L12 6l-.5-.5a5 5 0 0 0-7 7L12 20l7.5-7.5a5 5 0 0 0 0-7Z"/>',
+  volume: '<path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/>',
+  mute: '<path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/>',
 };
 
 const RI_ICON_MAP = {
@@ -156,6 +159,9 @@ const state = {
   timerId: null,
   audioContext: null,
   routeRestoring: false,
+  soundEnabled: true,
+  bgmSchedulerId: null,
+  bgmNextTime: 0,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -189,6 +195,9 @@ const elements = {
   timerLabel: $("#timer-label"),
   playGameIcon: $("#play-game-icon"),
   playGameName: $("#play-game-name"),
+  soundToggle: $("#sound-toggle"),
+  soundToggleIcon: $("#sound-toggle-icon"),
+  soundToggleLabel: $("#sound-toggle-label"),
   playClockLabel: $("#play-clock-label"),
   playProgress: $("#play-progress"),
   playProgressFill: $("#play-progress-fill"),
@@ -391,12 +400,16 @@ function parseRoute() {
 function setView(viewName, options = {}) {
   const { pushHistory = true, replaceHistory = false, gameId = state.selectedGameId } = options;
 
-  if (state.view === "play" && viewName !== "play" && state.activeSession) {
-    stopClock();
-    state.activeSession = null;
+  if (state.view === "play" && viewName !== "play") {
+    stopBgm();
+    if (state.activeSession) {
+      stopClock();
+      state.activeSession = null;
+    }
   }
 
   state.view = viewName;
+  document.body.dataset.view = viewName;
   $$(".view").forEach((view) => view.classList.toggle("is-visible", view.id === `${viewName}-view`));
   $$(".nav-button").forEach((button) => button.classList.toggle("is-active", button.dataset.viewTarget === viewName));
   if (viewName === "mypage") renderMyPage();
@@ -643,7 +656,8 @@ function primeAlarmSound() {
   unlockAudio();
 }
 
-function playTone({ frequency, startAt, duration, volume = 0.18, type = "sine" }) {
+function playTone({ frequency, endFrequency, startAt, duration, volume = 0.18, type = "sine" }) {
+  if (!state.soundEnabled) return;
   const audioContext = getAudioContext();
   if (!audioContext) return;
 
@@ -651,13 +665,133 @@ function playTone({ frequency, startAt, duration, volume = 0.18, type = "sine" }
   const gain = audioContext.createGain();
   oscillator.type = type;
   oscillator.frequency.setValueAtTime(frequency, startAt);
+  if (endFrequency) oscillator.frequency.exponentialRampToValueAtTime(endFrequency, startAt + duration);
   gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.015);
+  gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.012);
   gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
   oscillator.connect(gain);
   gain.connect(audioContext.destination);
   oscillator.start(startAt);
   oscillator.stop(startAt + duration + 0.03);
+}
+
+// 오락실 8비트 느낌의 짧은 효과음. 모두 square/sawtooth 파형으로 합성한다.
+function playSequence(notes) {
+  if (!state.soundEnabled) return;
+  const audioContext = getAudioContext();
+  if (!audioContext) return;
+  audioContext.resume?.().catch(() => {});
+  const base = audioContext.currentTime + 0.02;
+  notes.forEach((note) => playTone({ ...note, startAt: base + (note.offset || 0) }));
+}
+
+// 정답: 밝게 반짝이는 상승 벨 "딩동댕" (기음 + 옥타브 스파클)
+function playCorrectSound() {
+  playSequence([
+    { frequency: 783.99, duration: 0.16, volume: 0.15, type: "triangle", offset: 0 }, // G5
+    { frequency: 1046.5, duration: 0.16, volume: 0.15, type: "triangle", offset: 0.1 }, // C6
+    { frequency: 1567.98, duration: 0.36, volume: 0.16, type: "triangle", offset: 0.2 }, // G6
+    { frequency: 2093.0, duration: 0.36, volume: 0.045, type: "sine", offset: 0.2 }, // C7 스파클
+  ]);
+}
+
+// 틀림: 게임쇼 "wrong" 부저음 (낮고 거친 두 음 동시, 살짝 하강)
+function playWrongSound() {
+  playSequence([
+    { frequency: 196, endFrequency: 174, duration: 0.46, volume: 0.14, type: "sawtooth", offset: 0 },
+    { frequency: 185, endFrequency: 164, duration: 0.46, volume: 0.12, type: "sawtooth", offset: 0 },
+  ]);
+}
+
+// Pass: "슝" 위로 날아가는 상승 스윕
+function playPassSound() {
+  playSequence([
+    { frequency: 320, endFrequency: 1500, duration: 0.26, volume: 0.13, type: "triangle", offset: 0 },
+  ]);
+}
+
+// 오락실 느낌의 반복 칩튠 BGM. 16스텝 루프를 오디오 클럭에 맞춰 이어 붙여 재생한다.
+// 마리오풍: 밝은 장조, 큰 음정 점프, 스타카토, 루트-5도 바운싱 베이스.
+const BGM = {
+  step: 0.13, // 한 스텝 길이(초) — 빠르고 경쾌하게
+  steps: 16,
+  // 리드 멜로디(square). null은 쉼표.
+  lead: [
+    659.25, null, 1046.5, null, 987.77, 880.0, 783.99, null,
+    659.25, 783.99, 1046.5, null, 1318.51, null, 1046.5, null,
+  ],
+  // 베이스(triangle). 2스텝마다 루트-5도 바운싱 (C-G / F-C).
+  bass: [
+    130.81, null, 196.0, null, 130.81, null, 196.0, null,
+    174.61, null, 130.81, null, 196.0, null, 130.81, null,
+  ],
+};
+
+function scheduleBgmLoop(loopStart) {
+  for (let i = 0; i < BGM.steps; i += 1) {
+    const at = loopStart + i * BGM.step;
+    if (BGM.lead[i]) {
+      playTone({ frequency: BGM.lead[i], startAt: at, duration: BGM.step * 0.7, volume: 0.05, type: "square" });
+    }
+    if (BGM.bass[i]) {
+      playTone({ frequency: BGM.bass[i], startAt: at, duration: BGM.step * 1.5, volume: 0.05, type: "triangle" });
+    }
+  }
+}
+
+function startBgm() {
+  if (!state.soundEnabled || state.bgmSchedulerId) return;
+  const audioContext = getAudioContext();
+  if (!audioContext) return;
+  audioContext.resume?.().catch(() => {});
+  const loopDuration = BGM.step * BGM.steps;
+  state.bgmNextTime = audioContext.currentTime + 0.1;
+  const tick = () => {
+    const ctx = getAudioContext();
+    // 소리 꺼짐·play 화면 이탈·세션 종료 시 스케줄러를 스스로 정리해 BGM을 확실히 멈춘다.
+    if (!ctx || !state.soundEnabled || state.view !== "play" || !state.activeSession) {
+      stopBgm();
+      return;
+    }
+    // 백그라운드 복귀 등으로 스케줄이 밀렸으면 과거 음이 몰리지 않게 현재로 당긴다.
+    if (state.bgmNextTime < ctx.currentTime) state.bgmNextTime = ctx.currentTime + 0.05;
+    // 오디오 클럭 기준 0.4초 앞까지 미리 예약해 끊김 없이 반복시킨다.
+    while (state.bgmNextTime < ctx.currentTime + 0.4) {
+      scheduleBgmLoop(state.bgmNextTime);
+      state.bgmNextTime += loopDuration;
+    }
+  };
+  tick();
+  state.bgmSchedulerId = window.setInterval(tick, 120);
+}
+
+function stopBgm() {
+  if (state.bgmSchedulerId) {
+    window.clearInterval(state.bgmSchedulerId);
+    state.bgmSchedulerId = null;
+  }
+}
+
+function renderSoundToggle() {
+  if (!elements.soundToggle) return;
+  const on = state.soundEnabled;
+  elements.soundToggleIcon.innerHTML = iconSvg(on ? "volume" : "mute", "icon");
+  elements.soundToggleLabel.textContent = on ? "소리 켜짐" : "소리 꺼짐";
+  elements.soundToggle.setAttribute("aria-pressed", String(on));
+  elements.soundToggle.classList.toggle("is-muted", !on);
+}
+
+function toggleSound() {
+  state.soundEnabled = !state.soundEnabled;
+  writeStorage(STORAGE_KEYS.soundEnabled, state.soundEnabled);
+  renderSoundToggle();
+  if (state.soundEnabled) {
+    unlockAudio();
+    playPassSound();
+    if (state.view === "play" && state.activeSession) startBgm();
+  } else {
+    stopBgm();
+  }
 }
 
 function playCountdownTick() {
@@ -702,6 +836,7 @@ function playTimerEndSound() {
 
 function startGame(settings) {
   stopClock();
+  stopBgm();
   primeAlarmSound();
   state.lastSettings = settings;
   state.activeSession = createSession(settings);
@@ -714,6 +849,7 @@ function startGame(settings) {
 
   setView("play", { gameId: settings.gameId });
   renderPlay();
+  startBgm();
   startClock();
 }
 
@@ -834,6 +970,8 @@ function markAnswer(result) {
   }
 
   setAnswer(session, { word, difficulty: getWordDifficulty(wordEntry, session.difficulty), result, order: session.currentIndex + 1 });
+  if (result === "correct") playCorrectSound();
+  else if (result === "wrong") playWrongSound();
   moveNext(false);
 }
 
@@ -845,6 +983,7 @@ function moveNext(markPassIfEmpty = true) {
   const word = getWordValue(wordEntry);
   if (markPassIfEmpty && word && !getAnswerForCurrentWord(session)) {
     setAnswer(session, { word, difficulty: getWordDifficulty(wordEntry, session.difficulty), result: "pass", order: session.currentIndex + 1 });
+    playPassSound();
   }
 
   session.currentIndex += 1;
@@ -873,6 +1012,7 @@ function finishGame(reason = "") {
   if (!session) return;
 
   stopClock();
+  stopBgm();
   const finishedAt = new Date();
   const answerByOrder = new Map(session.answers.map((answer) => [answer.order, answer]));
   const playedWords = session.words.map((wordEntry, index) => {
@@ -1231,6 +1371,7 @@ document.addEventListener("click", (event) => {
     adjustNumberInput(elements.wordCount, Number(target.dataset.delta), 1, maxWords);
   }
   if (action === "use-all-words") setAllWordsCount();
+  if (action === "toggle-sound") toggleSound();
   if (action === "adjust-timer") {
     adjustNumberInput(elements.timerSeconds, Number(target.dataset.delta), 5, 600);
     updateTimerLabel();
@@ -1321,6 +1462,8 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+state.soundEnabled = readStorage(STORAGE_KEYS.soundEnabled, true) !== false;
+renderSoundToggle();
 renderGameList();
 updateTimerLabel();
 const initialRoute = parseRoute();
